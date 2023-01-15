@@ -6,20 +6,20 @@ const cors = require("cors") ;
 app.use(cors()) ;
 app.use(express.json()) ;
 const jwt = require("jsonwebtoken") ;
+
 //verify token
 const verifyToken = (req , res , next ) => {
     const token = req.headers.authentication ; 
     const getToken = token.split(" ")[1] ;
-    console.log("Token --> " , token);
-    jwt.verify(getToken , process.env.scure_token , function(error , decoded){
-    if(error){
-    return res.status(403).send({message:"unauthorize access"}) ;
-    }
-    req.decoded = decoded ; 
-    next() ;
-    })
-    }   
 
+   jwt.verify(getToken , process.env.scure_token , (error , decodedData) => {
+    if(error) {
+        return res.status(403).send({message:"unauthorize access"}) ;
+    }  
+        req.decodedData = decodedData ;
+        next() ;
+   })
+    }   
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = process.env.mongodb_url ;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
@@ -30,23 +30,27 @@ const skills =  client.db("portfolio").collection("skills") ;
 const users =  client.db("portfolio").collection("users") ;
 const references =  client.db("portfolio").collection("references") ;
 
-
-// const collectionMake = () => {
-//    const skills =  client.db("portfolio").collection("details") ;
-//   skills.insertOne({name:"skill"}) ;
-// }
-//  collectionMake() ;
-
 app.get("/" , (req , res) => {
 res.send("Hello this is home page!!")
 })
 const runMongoDB = async () => {
 
-app.get("/projects" , async (req , res) => {
+app.get("/projects" ,verifyToken,  async (req , res) => {
 const result  = await projects.find().toArray() ;
 res.status(201).send(result) ;
-})
+}) 
+//get single user data  
+app.get("/user/:email" , verifyToken ,  async (req , res) => {
+const email = req.params?.email ;
+const getAdmin = await users.findOne({email:email}) ;
+if(email === req.decodedData?.email && getAdmin.role ==="admin") {
+const result = await users.findOne({email:email}) ;
+return res.status(201).send(result) ; 
+}else{
+    return res.status(403).send({message:"unauthorize access"}) ; 
+}
 
+})
 app.get("/details/:id"  , async (req , res ) => {
 const id =  req.params.id ;
 const result = await details.find({
@@ -54,13 +58,20 @@ const result = await details.find({
 }).toArray() ;
 res.status(201).send(result) ;
 })
-
-app.delete("/details/:id" , async (req , res) => {
+//delete project details
+app.delete("/details/:id" , verifyToken,  async (req , res) => {
 const id = req.params.id ;
-const result = await details.deleteOne({
-    $or:[{_id:ObjectId(id)} , {projectId:ObjectId(parseInt(id))}]
-}) ;
-res.status(201).send(result) ;
+const authorEmailCheck = req?.decodedData?.email  ;
+const findUsers = await users.findOne({email:authorEmailCheck}) ;
+//check admin
+if(findUsers?.email === authorEmailCheck && findUsers?.role === "admin") {
+    const result = await details.deleteOne({
+        $or:[{_id:ObjectId(id)} , {projectId:ObjectId(parseInt(id))}]
+    }) ;
+    return res.status(201).send(result) ;
+ } else{
+   return  res.status(403).send({message:"unauthorize access"}) ;
+ }
 })
 
 app.get("/projectSections/:id" , async (req , res) => {
@@ -76,7 +87,7 @@ const result = await details.insertOne(detailsData) ;
 res.status(201).send(result) ;
 })
 
-app.post("/references", async(req , res) => {
+app.post("/references", verifyToken ,  async(req , res) => {
 const referencesData = req.body;
 const findData = await references.findOne({email:req.body?.email}) ;
 if(findData){
@@ -88,18 +99,25 @@ res.status(201).send(result);
 }
 })
 
-app.get("/references" , async (req , res) => {
+app.get("/references" , verifyToken,  async (req , res) => {
 const result = await references.find({}).toArray() ;
 res.status(201).send(result) ;
 })
-
-app.delete("/references/:id" , async(req , res) => {
+//delete reference
+app.delete("/references/:id" , verifyToken,  async(req , res) => {
 const id = {_id : ObjectId(req.params.id)} ;
-const result = await references.deleteOne(id) ;
-res.status(201).send(result) ;
+const authorEmailCheck = req?.decodedData?.email  ;
+const findUsers = await users.findOne({email:authorEmailCheck}) ;
+//check admin
+if(findUsers?.email === authorEmailCheck && findUsers?.role === "admin") {
+   const result = await references.deleteOne(id) ;
+    return res.status(201).send(result) ;
+ } else{
+   return  res.status(403).send({message:"unauthorize access"}) ;
+ }
 })
 
-app.get("/projects/:id"  , async (req , res ) => {
+app.get("/projects/:id", verifyToken, async (req , res ) => {
     const id = req.params.id ;
     const findById  = {_id : ObjectId(id)} ;
     const result =  await projects.findOne(findById) ;
@@ -108,16 +126,19 @@ app.get("/projects/:id"  , async (req , res ) => {
     })
 
 //add new projects
-app.post("/projects" ,  async (req,res) => {
+app.post("/projects" , verifyToken,  async (req,res) => {
 const projectData = req.body ;
 const result = await projects.insertOne(projectData) ;
 res.status(201).send(result) ;
 })
 
 //update project
-app.put("/projects/:id" , async(req , res) => {
+app.put("/projects/:id" , verifyToken, async(req , res) => {
 const id = req.params.id ;
 const getUpdateData = req.body ;
+const authorEmailCheck = req.decodedData?.email  ;
+const findUsers = await users.findOne({email:authorEmailCheck}) ;
+
 const updateId = {_id: ObjectId(id)} ;
 const option = {upsert:true} ;
 const updateDocument = {
@@ -134,16 +155,23 @@ const updateDocument = {
         publishDate:new Date().toLocaleDateString() ,
     }
 }
-const result = await projects.updateOne(updateId , updateDocument , option) ;
-res.status(201).send(result) ;
+//check admin
+if(findUsers?.email === authorEmailCheck && findUsers?.role === "admin") {
+    const result = await projects.updateOne(updateId , updateDocument , option) ;
+   return res.status(201).send(result) ;
+} else{
+  return  res.status(403).send({message:"unauthorize access"}) ;
+}
 
 }) 
 
-
 //update project details
-app.put("/sectionUpdate/:id" , async(req , res) => {
+app.put("/sectionUpdate/:id" , verifyToken ,  async(req , res) => {
     const id = req.params.id ;
     const getUpdateData = req.body ;
+    const authorEmailCheck = req?.decodedData?.email  ;
+   const findUsers = await users.findOne({email:authorEmailCheck}) ;
+
     const updateId = {_id: ObjectId(id)} ;
     const option = {upsert:true} ;
     const updateDocument = {
@@ -158,17 +186,32 @@ app.put("/sectionUpdate/:id" , async(req , res) => {
             publishDate:new Date().toLocaleDateString() ,
         }
     }
-    const result = await details.updateOne(updateId , updateDocument , option) ;
-    res.status(201).send(result) ;
-    
-    })
+//check admin
+if(findUsers?.email === authorEmailCheck && findUsers?.role === "admin") {
+   const result = await details.updateOne(updateId , updateDocument , option) ;
+   return res.status(201).send(result) ;
+} else{
+  return  res.status(403).send({message:"unauthorize access"}) ;
+}
+})
 
 //delete project data 
-
-app.delete("/projects/:id" , async(req , res) => {
+app.delete("/projects/:id" , verifyToken,  async(req , res) => {
 const id = req.params.id ;
-const result = await projects.deleteOne({_id:ObjectId(id)}) ;
-res.status(201).send(result) ;
+const authorEmailCheck = req?.decodedData?.email  ;
+const findUsers = await users.findOne({email:authorEmailCheck}) ;
+//check admin
+if(findUsers?.email === authorEmailCheck && findUsers?.role === "admin") {
+     const result = await projects.deleteOne({_id:ObjectId(id)}) ;
+     const deleteAllSection = await details.deleteMany({
+        $or:[{projectId:id} , {projectId:parseInt(id)}] 
+     }) ;
+
+    return res.status(201).send({result:result , deleteAllSection:deleteAllSection}) ;
+ } else{
+   return  res.status(403).send({message:"unauthorize access"}) ;
+ }
+
 })
 
 app.get("/skills"  , async (req , res ) => {
@@ -189,8 +232,8 @@ console.log(`Your server running on port number:${port}`);
 
 //generate a token
 app.post("/jwt"  ,  async(req , res) => {
-    const email = req.body ;
-    const scure_token = process.env.scure_token;
-    const token = jwt.sign(email , scure_token  , {expiresIn:"2d"})  ;
+    const payload = req.body ;
+    const signature = process.env.scure_token;
+    const token = jwt.sign(payload , signature  , {expiresIn:"2d"})  ;
     res.status(201).send({token:token}) ;
   })
