@@ -20,73 +20,97 @@ const verifyToken = (req , res , next ) => {
         next() ;
    })
     }   
+
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = process.env.mongodb_url ;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
+
 //all collections are here 
 const projects = client.db("portfolio").collection("projects") ;
 const details = client.db("portfolio").collection("details") ;
 const skills =  client.db("portfolio").collection("skills") ;
 const users =  client.db("portfolio").collection("users") ;
 const references =  client.db("portfolio").collection("references") ;
+const abouts =  client.db("portfolio").collection("abouts") ;
+
+
+
+//verify admin
+const verifyAdmin = async (req , res , next ) => {
+    const email = req.decodedData?.email ;
+    const getAdmin = await users.findOne({email:email}) ;
+    if(email === getAdmin?.email && getAdmin?.role === "admin") {
+       return next() ; 
+    }else{
+        return res.status(403).send({message:"unauthorize access"}) ;  
+    }
+}
 
 app.get("/" , (req , res) => {
 res.send("Hello this is home page!!")
 })
 const runMongoDB = async () => {
-
-app.get("/projects" ,verifyToken,  async (req , res) => {
-const result  = await projects.find().toArray() ;
-res.status(201).send(result) ;
+app.get("/projects" ,  async (req , res) => {
+const page = parseInt(req.query.page) ; 
+const size = parseInt(req.query.size ); 
+//cursor and query obiliged
+const query = {} ; 
+const cursor = await projects.find(query) ;
+const count = await projects.estimatedDocumentCount() ;
+const data  = await cursor.skip(page * size).limit(size).toArray() ;
+res.status(201).send({count , data}) ; 
 }) 
+
 //get single user data  
-app.get("/user/:email" , verifyToken ,  async (req , res) => {
+app.get("/user/:email" , verifyToken , verifyAdmin, async (req , res) => {
 const email = req.params?.email ;
-const getAdmin = await users.findOne({email:email}) ;
-if(email === req.decodedData?.email && getAdmin.role ==="admin") {
 const result = await users.findOne({email:email}) ;
 return res.status(201).send(result) ; 
-}else{
-    return res.status(403).send({message:"unauthorize access"}) ; 
-}
+}) ;
 
+//get one section data
+app.get("/singleDetailsData/:id" , async (req , res ) => {
+    const id = req.params.id ;
+    const result = await details.find({
+        $or:[{projectId:id} , {projectId:parseInt(id)}]
+    }).toArray() ;
+    return res.status(201).send(result) ; 
 })
-app.get("/details/:id"  , async (req , res ) => {
-const id =  req.params.id ;
-const result = await details.find({
-    $or: [{projectId:id} , {projectId:parseInt(id)}]
-}).toArray() ;
-res.status(201).send(result) ;
-})
+
+//get all data with match id with section 
+app.get("/details" , async (req , res ) => {
+const id =  req.query.id ;
+const page = parseInt(req.query.page) ; 
+const size = parseInt(req.query.size ); 
+//cursor and query obiliged
+const query = {$or: [{projectId:id} , {projectId:parseInt(id)}]} ; 
+const cursor = await details.find(query) ;
+const count = await details.count({$or: [{projectId:id} , {projectId:parseInt(id)}]}) ;
+const data  = await cursor.skip(page * size).limit(size).toArray() ;
+res.status(201).send({count , data}) ; 
+}) 
+
 //delete project details
-app.delete("/details/:id" , verifyToken,  async (req , res) => {
+app.delete("/details/:id" , verifyToken , verifyAdmin ,  async (req , res) => { 
 const id = req.params.id ;
-const authorEmailCheck = req?.decodedData?.email  ;
-const findUsers = await users.findOne({email:authorEmailCheck}) ;
-//check admin
-if(findUsers?.email === authorEmailCheck && findUsers?.role === "admin") {
-    const result = await details.deleteOne({
-        $or:[{_id:ObjectId(id)} , {projectId:ObjectId(parseInt(id))}]
-    }) ;
-    return res.status(201).send(result) ;
- } else{
-   return  res.status(403).send({message:"unauthorize access"}) ;
- }
+const result = await details.deleteOne({_id:ObjectId(id)} ) ;
+res.status(201).send(result) ; 
 })
 
-app.get("/projectSections/:id" , async (req , res) => {
+//get one section 
+app.get("/projectSections/:id" , verifyToken , verifyAdmin ,  async (req , res) => {
 const id = req.params.id ;
 const findById = {_id : ObjectId(id)} ;
-const result = await details.findOne(findById) ;
-res.status(201).send(result) ;
+    const result = await details.findOne(findById) ;
+    res.status(201).send(result) ;
 })
 
-app.post("/details" , async (req , res) => {
+app.post("/details" , verifyToken , verifyAdmin, async (req , res) => {
 const detailsData = req.body ;
-const result = await details.insertOne(detailsData) ;
-res.status(201).send(result) ;
+   const result = await details.insertOne(detailsData) ;
+    res.status(201).send(result) ;
 })
-
+//save on reference data 
 app.post("/references", verifyToken ,  async(req , res) => {
 const referencesData = req.body;
 const findData = await references.findOne({email:req.body?.email}) ;
@@ -98,26 +122,19 @@ const result = await references.insertOne(referencesData) ;
 res.status(201).send(result);
 }
 })
-
+//----------- references date get ----------------------> 
 app.get("/references" , verifyToken,  async (req , res) => {
 const result = await references.find({}).toArray() ;
 res.status(201).send(result) ;
 })
 //delete reference
-app.delete("/references/:id" , verifyToken,  async(req , res) => {
+app.delete("/references/:id" , verifyToken,  verifyAdmin, async(req , res) => {
 const id = {_id : ObjectId(req.params.id)} ;
-const authorEmailCheck = req?.decodedData?.email  ;
-const findUsers = await users.findOne({email:authorEmailCheck}) ;
-//check admin
-if(findUsers?.email === authorEmailCheck && findUsers?.role === "admin") {
    const result = await references.deleteOne(id) ;
     return res.status(201).send(result) ;
- } else{
-   return  res.status(403).send({message:"unauthorize access"}) ;
- }
 })
 
-app.get("/projects/:id", verifyToken, async (req , res ) => {
+app.get("/projects/:id", verifyToken, verifyAdmin, async (req , res ) => {
     const id = req.params.id ;
     const findById  = {_id : ObjectId(id)} ;
     const result =  await projects.findOne(findById) ;
@@ -125,22 +142,19 @@ app.get("/projects/:id", verifyToken, async (req , res ) => {
 
     })
 
-//add new projects
+//add new projects            
 app.post("/projects" , verifyToken,  async (req,res) => {
 const projectData = req.body ;
-const result = await projects.insertOne(projectData) ;
-res.status(201).send(result) ;
+    const result = await projects.insertOne(projectData) ;
+    res.status(201).send(result) ;
 })
 
 //update project
-app.put("/projects/:id" , verifyToken, async(req , res) => {
+app.put("/projects/:id" , verifyToken, verifyAdmin, async(req , res) => {
 const id = req.params.id ;
 const getUpdateData = req.body ;
-const authorEmailCheck = req.decodedData?.email  ;
-const findUsers = await users.findOne({email:authorEmailCheck}) ;
-
 const updateId = {_id: ObjectId(id)} ;
-const option = {upsert:true} ;
+const option = {upsert:true} ; 
 const updateDocument = {
     $set:{
         authorName:getUpdateData?.authorName ,
@@ -155,23 +169,14 @@ const updateDocument = {
         publishDate:new Date().toLocaleDateString() ,
     }
 }
-//check admin
-if(findUsers?.email === authorEmailCheck && findUsers?.role === "admin") {
     const result = await projects.updateOne(updateId , updateDocument , option) ;
    return res.status(201).send(result) ;
-} else{
-  return  res.status(403).send({message:"unauthorize access"}) ;
-}
-
 }) 
 
 //update project details
-app.put("/sectionUpdate/:id" , verifyToken ,  async(req , res) => {
+app.put("/sectionUpdate/:id" , verifyToken , verifyAdmin,  async(req , res) => {
     const id = req.params.id ;
     const getUpdateData = req.body ;
-    const authorEmailCheck = req?.decodedData?.email  ;
-   const findUsers = await users.findOne({email:authorEmailCheck}) ;
-
     const updateId = {_id: ObjectId(id)} ;
     const option = {upsert:true} ;
     const updateDocument = {
@@ -186,44 +191,112 @@ app.put("/sectionUpdate/:id" , verifyToken ,  async(req , res) => {
             publishDate:new Date().toLocaleDateString() ,
         }
     }
-//check admin
-if(findUsers?.email === authorEmailCheck && findUsers?.role === "admin") {
    const result = await details.updateOne(updateId , updateDocument , option) ;
    return res.status(201).send(result) ;
-} else{
-  return  res.status(403).send({message:"unauthorize access"}) ;
-}
 })
 
 //delete project data 
-app.delete("/projects/:id" , verifyToken,  async(req , res) => {
+app.delete("/projects/:id" , verifyToken, verifyAdmin, async(req , res) => {
 const id = req.params.id ;
-const authorEmailCheck = req?.decodedData?.email  ;
-const findUsers = await users.findOne({email:authorEmailCheck}) ;
-//check admin
-if(findUsers?.email === authorEmailCheck && findUsers?.role === "admin") {
      const result = await projects.deleteOne({_id:ObjectId(id)}) ;
      const deleteAllSection = await details.deleteMany({
         $or:[{projectId:id} , {projectId:parseInt(id)}] 
      }) ;
 
-    return res.status(201).send({result:result , deleteAllSection:deleteAllSection}) ;
- } else{
-   return  res.status(403).send({message:"unauthorize access"}) ;
- }
+res.status(201).send({result:result , deleteAllSection:deleteAllSection}) ;
 
 })
+//insert new skill
+app.post("/skills" , verifyToken, verifyAdmin, async (req , res) => {
+const skillData = req.body ;
+    const result = await skills.insertOne(skillData) ;
+    res.status(201).send(result) ;
+}) ;
+//delete single data 
+app.delete("/skills/:id" , verifyToken, verifyAdmin, async (req , res) => {
+const id = req.params.id ;
+    const result = await skills.deleteOne({_id : ObjectId(id)}) ;
+    res.status(201).send(result) ;
+});
+//get single skill data 
+app.get("/getSingleSkill/:id" , verifyToken , verifyAdmin, async (req , res) => {
+    const id = req.params.id ;
+    const result = await skills.findOne({_id : ObjectId(id)}) ;
+    res.status(201).send(result) ;
+    })
+//get all skills
+app.get("/skills" ,  async (req , res ) => { 
+const page = parseInt(req.query.page) ; 
+const size = parseInt(req.query.size ); 
+//cursor and query obiliged
+const query = {} ;
+const cursor = await skills.find(query) ;
+const count = await skills.estimatedDocumentCount() ;
+const data  = await cursor.skip(page * size).limit(size).toArray() ;
+res.status(201).send({count , data}) ;
+}) 
 
-app.get("/skills"  , async (req , res ) => {
- const result = await skills.find().toArray() ;
- res.status(201).send(result) ;
-})
+//update skills details
+app.put("/skills/:id" , verifyToken , verifyAdmin, async(req , res) => {
+    const id = req.params.id ;
+    const getUpdateData = req.body ;
+    const updateId = {_id: ObjectId(id)} ;
+    const updateDocument = {
+        $set:{
+            authorEmail:getUpdateData?.authorEmail ,
+            authorImage:getUpdateData?.authorImage ,
+            technology:getUpdateData?.technology ,
+            startingDate:getUpdateData?.startingDate ,
+            realTimeExperience:getUpdateData?.realTimeExperience ,
+            technologyImage:getUpdateData?.technologyImage ,
+            experience:getUpdateData?.experience ,
+            publishDate: publishDate ,
+            updatedDate : new Date().toLocaleDateString() ,
+            updatedTime:new Date().toLocaleTimeString() ,
+        }
+        
+    }
+    const result = await skills.updateOne(updateId , updateDocument) ;
+    return res.status(201).send(result) ;
+    }) 
+
 //user information
 app.post("/users" , async (req , res) => {
 const userData = req.body ;
 const result = await users.insertOne(userData) ;
 res.status(201).send(result) ;
 })
+//get abouts data 
+app.get("/abouts" , async (req , res)=>{
+const aboutData = await abouts.find({}).toArray() ;
+res.status(201).send(aboutData) ;
+}) 
+//get single about data 
+app.get("/abouts/:id" , async(req , res)=>{
+const id = req.params?.id;
+const aboutData = await abouts.findOne({_id:ObjectId(id)});
+res.status(201).send(aboutData) ;
+})
+//update about information
+app.put("/abouts/:id" , verifyToken , verifyAdmin, async(req , res) => {
+const id = req.params?.id ;
+const findById = {_id : ObjectId(id)} ;
+const aboutData = req.body ;
+const updateDocument = {
+    $set:{
+        aboutText:aboutData?.aboutText ,
+        adminImage:aboutData?.adminImage ,
+        name:aboutData?.name ,
+        websiteLink:aboutData?.websiteLink ,
+        saveDate:aboutData?.saveDate ,
+        updatedDate: new Date().toLocaleDateString() ,
+        updatedTime:new Date().toLocaleTimeString() ,
+    }
+}
+const result = await abouts.updateOne(findById , updateDocument) ;
+res.status(201).send(result) ;
+})
+//add new 
 }
 runMongoDB().catch(error => console.log("Error => " , error))
 app.listen(port , (req , res) => {
