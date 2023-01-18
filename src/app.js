@@ -111,21 +111,33 @@ const detailsData = req.body ;
     res.status(201).send(result) ;
 })
 //save on reference data 
-app.post("/references", verifyToken ,  async(req , res) => {
+app.post("/references", verifyToken , async(req , res) => {
 const referencesData = req.body;
-const findData = await references.findOne({email:req.body?.email}) ;
+const query = {
+$or:[
+    {email:req.body?.email} ,
+    {phone_number:req.body?.phone_number} , 
+]
+}
+const findData = await references.findOne(query) ;
 if(findData){
-res.send({message: true , data: findData });
+return res.send({message: true , data: findData });
 }
 else{
 const result = await references.insertOne(referencesData) ;
-res.status(201).send(result);
+return res.status(201).send(result); 
 }
 })
 //----------- references date get ----------------------> 
 app.get("/references" , verifyToken,  async (req , res) => {
-const result = await references.find({}).toArray() ;
-res.status(201).send(result) ;
+const page = parseInt(req.query.page) ; 
+const size = parseInt(req.query.size ); 
+//cursor and query obiliged
+const query = {} ;
+const cursor = await references.find(query) ;
+const count = await references.estimatedDocumentCount() ;
+const data  = await cursor.skip(page * size).limit(size).toArray() ;
+res.status(201).send({count , data}) ;
 })
 //delete reference
 app.delete("/references/:id" , verifyToken,  verifyAdmin, async(req , res) => {
@@ -198,7 +210,9 @@ app.put("/sectionUpdate/:id" , verifyToken , verifyAdmin,  async(req , res) => {
 //delete project data 
 app.delete("/projects/:id" , verifyToken, verifyAdmin, async(req , res) => {
 const id = req.params.id ;
-     const result = await projects.deleteOne({_id:ObjectId(id)}) ;
+     const result = await projects.deleteOne({
+        $or:[{projectId:id} , {projectId:parseInt(id)}] 
+     }) ;
      const deleteAllSection = await details.deleteMany({
         $or:[{projectId:id} , {projectId:parseInt(id)}] 
      }) ;
