@@ -22,6 +22,9 @@ const verifyToken = (req , res , next ) => {
     }   
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const getUsers = require("./api/getUsers");
+const { getUsersInformation, getSingleUserInfo, updateSingleUserInfoForAdmin, deleteSingleUserData, deleteAllUsers } = require("./api/manageUsers");
+const { sendOneMail } = require("./api/sendMail");
 const uri = process.env.mongodb_url ;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
 
@@ -33,11 +36,10 @@ const users =  client.db("portfolio").collection("users") ;
 const references =  client.db("portfolio").collection("references") ;
 const abouts =  client.db("portfolio").collection("abouts") ;
 
-
-
 //verify admin
 const verifyAdmin = async (req , res , next ) => {
     const email = req.decodedData?.email ;
+    
     const getAdmin = await users.findOne({email:email}) ;
     if(email === getAdmin?.email && getAdmin?.role === "admin") {
        return next() ; 
@@ -67,7 +69,8 @@ const email = req.params?.email ;
 const result = await users.findOne({email:email}) ;
 return res.status(201).send(result) ; 
 }) ;
-
+//send mail
+sendOneMail(app, verifyToken , verifyAdmin ) ;
 //get one section data
 app.get("/singleDetailsData/:id" , async (req , res ) => {
     const id = req.params.id ;
@@ -274,12 +277,46 @@ app.put("/skills/:id" , verifyToken , verifyAdmin, async(req , res) => {
     return res.status(201).send(result) ;
     }) 
 
-//user information
+//user information post // >>------------------------>> users section 
 app.post("/users" , async (req , res) => {
 const userData = req.body ;
-const result = await users.insertOne(userData) ;
-res.status(201).send(result) ;
-})
+const findUser = await users.findOne({email :  userData?.email}) ;
+if(findUser) {
+return res.status(201).send({message:"activeUser"}) ;
+} else if(userData?.email === "subrota45278@gmail.com") {
+    const result = await users.insertOne({
+        ...userData , 
+         role : "admin" , 
+    }) ;
+    return  res.status(201).send(result) ;
+} else{
+    const result = await users.insertOne(userData) ;
+   return  res.status(201).send(result) ;
+}
+
+});
+
+//get user information for normal users
+
+getUsers(app  , verifyToken,  users) ;
+
+//get user for admin
+
+getUsersInformation(app , verifyToken , verifyAdmin , users ) ;
+
+//get single user for admin
+
+getSingleUserInfo(app , verifyToken , verifyAdmin , users) ;
+
+//update single user for admin
+updateSingleUserInfoForAdmin(app , verifyToken , verifyAdmin , users) ;
+
+//delete single user data
+deleteSingleUserData(app , verifyToken , verifyAdmin , users) ;
+
+//delete all users
+deleteAllUsers(app , verifyToken , verifyAdmin , users) ; 
+
 //get abouts data 
 app.get("/abouts" , async (req , res)=>{
 const aboutData = await abouts.find({}).toArray() ;
