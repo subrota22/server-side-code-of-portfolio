@@ -22,9 +22,7 @@ const verifyToken = (req , res , next ) => {
     }   
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-const getUsers = require("./api/getUsers");
-const { getUsersInformation, getSingleUserInfo, updateSingleUserInfoForAdmin, deleteSingleUserData, deleteAllUsers } = require("./api/manageUsers");
-const { sendOneMail } = require("./api/sendMail");
+const nodemailer = require("nodemailer");
 const uri = process.env.mongodb_url ;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
 
@@ -69,8 +67,7 @@ const email = req.params?.email ;
 const result = await users.findOne({email:email}) ;
 return res.status(201).send(result) ; 
 }) ;
-//send mail
-sendOneMail(app, verifyToken , verifyAdmin ) ;
+
 //get one section data
 app.get("/singleDetailsData/:id" , async (req , res ) => {
     const id = req.params.id ;
@@ -296,26 +293,6 @@ return res.status(201).send({message:"activeUser"}) ;
 
 });
 
-//get user information for normal users
-
-getUsers(app  , verifyToken,  users) ;
-
-//get user for admin
-
-getUsersInformation(app , verifyToken , verifyAdmin , users ) ;
-
-//get single user for admin
-
-getSingleUserInfo(app , verifyToken , verifyAdmin , users) ;
-
-//update single user for admin
-updateSingleUserInfoForAdmin(app , verifyToken , verifyAdmin , users) ;
-
-//delete single user data
-deleteSingleUserData(app , verifyToken , verifyAdmin , users) ;
-
-//delete all users
-deleteAllUsers(app , verifyToken , verifyAdmin , users) ; 
 
 //get abouts data 
 app.get("/abouts" , async (req , res)=>{
@@ -347,7 +324,161 @@ const updateDocument = {
 const result = await abouts.updateOne(findById , updateDocument) ;
 res.status(201).send(result) ;
 })
+
+//send single mail
+
+app.post("/sendSingleMail", verifyToken, verifyAdmin, async (req, res) => {
+    const mailData = req.body ;
+    async function main() {
+        let transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+                user: process.env.mailUser,
+                pass: process.env.mailPassword,
+            },
+        }); 
+
+        // send mail with defined transport object
+        let info = await transporter.sendMail({
+            from: '"Subrota chandra portfolio 👻" <subrota45278@gmail.com>', // sender address
+            to: mailData?.to, // list of receivers
+            subject: `${mailData?.subject} ✔`, // Subject line
+            html: `<div style="height: auto; width: 80%;background-color: #09053D;color: white;font-size: 17px;padding: 12px;border-radius: 12px; margin: auto; font-family: serif;font-weight: bold;"> 
+              <p>   ${mailData?.message}  </p>
+              <a href="https://portfolio-of-subrota-chandra.firebaseapp.com/" target="_blank" >
+
+              <img src="https://i.ibb.co/DLcFkNd/mylogo.png" alt="logo" 
+              style="height: 80px; width: 120px; border-radius: 50%; display: inline-block; margin: 20px;" />
+                 
+             </a>
+            </div>`, 
+        });
+
+        if (info.messageId) {
+            return res.send({message:"sended"})
+        }else{
+            return res.send({message:"failed"}) 
+        }
+    }
+
+    main().catch(console.error);
+});
+
+//get single user data 
+
+app.get("/usersInfo/:id", verifyToken, verifyAdmin ,  async (req, res) => {
+    const id = req.params.id  ;
+    const query = {_id : ObjectId(id)} ;
+    const result = await users.findOne(query) ;
+    res.status(201).send(result) ;
+})
+//get all user data 
+app.get("/all-users", verifyToken, verifyAdmin ,  async(req , res) => {
+const result =  await users.find({}).toArray() ;
+res.status(201).send(result) ;
+})
+//update single user data
+
+app.put("/usersInfo/:id", verifyToken, verifyAdmin ,  async (req, res) => {
+    const id = req.params.id  ;      
+    const query = {_id : ObjectId(id)} ;
+    const updateData = req.body ;
+    const updateDocument = {
+     $set:{
+         name: updateData?.name ,
+         email: updateData?.email ,
+         profile: updateData?.profile ,
+         phoneNumber: updateData?.phoneNumber ,
+         companyName: updateData?.companyName ,
+         joiningDate:updateData?.joiningDate ,
+         adminUpdatedDate : new Date().toLocaleDateString() ,
+      }
+    }
+    const result = await users.updateOne(query , updateDocument) ;
+    res.status(201).send(result) ;
+})
+
+//delete all users 
+
+app.delete("/deleteAllUsers/", verifyToken, verifyAdmin ,  async (req, res) => {
+    const result = await users.deleteMany({}) ;
+    res.status(201).send(result) ;
+} ) 
+//delete single user data
+
+app.delete("/usersInfo/:id", verifyToken, verifyAdmin ,  async (req, res) => {
+    const id = req.params.id  ;  
+    const query = {_id : ObjectId(id)} ;
+    const result = await users.deleteOne(query) ;
+    res.status(201).send(result) ;
+} )
+//get all user data for admin
+app.get("/usersInfo", verifyToken, verifyAdmin ,  async (req, res) => {
+    const page = parseInt(req.query.page);
+    const size = parseInt(req.query.size);
+    const query = {};
+    const cursor = await users.find(query);
+    const count = await users.estimatedDocumentCount();
+    const data = await cursor.skip(page * size).limit(size).toArray();
+    res.status(201).send({ count, data });
+}) ;
+//get user information 
+app.get("/usersInfo", verifyToken, async (req, res) => {
+    const page = parseInt(req.query.page);
+    const size = parseInt(req.query.size);
+    const query = {};
+    const cursor = await users.find(query);
+    const count = await users.estimatedDocumentCount();
+    const data = await cursor.skip(page * size).limit(size).toArray();
+    res.status(201).send({ count, data });
+});
+
+
+//send multiple mail
+
+app.post("/sendMultipleleMail", verifyToken, verifyAdmin, async (req, res) => {
+    const mailData = req.body ;
+    async function main() {
+        let transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+                user: process.env.mailUser,
+                pass: process.env.mailPassword,
+            },
+        }); 
+
+        // send mail with defined transport object
+        let info = await transporter.sendMail({
+            from: '"Subrota chandra portfolio 👻" <subrota45278@gmail.com>', // sender address
+            to: mailData?.to, // list of receivers
+            subject: `${mailData?.subject} ✔`, // Subject line
+            html: `<div style="height: auto; width: 80%;background-color: #09053D;color: white;font-size: 17px;padding: 12px;border-radius: 12px; margin: auto; font-family: serif;font-weight: bold;"> 
+              <p>   ${mailData?.message}  </p>
+              <a href="https://portfolio-of-subrota-chandra.firebaseapp.com/" target="_blank" >
+
+              <img src="https://i.ibb.co/DLcFkNd/mylogo.png" alt="logo" 
+              style="height: 80px; width: 120px; border-radius: 50%; display: inline-block; margin: 20px;" />
+                 
+             </a>
+            </div>`, 
+        }); 
+
+        if (info.messageId) {
+            return res.send({message:"sended"})
+        }else{
+            return res.send({message:"failed"}) 
+        }
+    }
+
+    main().catch(console.error);
+})
+
+
+
 //add new 
+
+//----->  target 1000+ <-----//
+
 }
 runMongoDB().catch(error => console.log("Error => " , error))
 app.listen(port , (req , res) => {
