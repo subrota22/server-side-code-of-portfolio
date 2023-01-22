@@ -129,7 +129,7 @@ return res.status(201).send(result);
 }
 })
 //----------- references date get ----------------------> 
-app.get("/references" , verifyToken,  async (req , res) => {
+app.get("/referallInformation" ,  async (req , res) => {
 const page = parseInt(req.query.page) ; 
 const size = parseInt(req.query.size ); 
 //cursor and query obiliged
@@ -371,7 +371,19 @@ app.get("/usersInfo/:id", verifyToken, verifyAdmin ,  async (req, res) => {
     const query = {_id : ObjectId(id)} ;
     const result = await users.findOne(query) ;
     res.status(201).send(result) ;
-})
+}) ;
+
+//get user by email
+app.get("/userinfo/:email"  , async ( req , res ) => {
+const email = req.params.email;
+const result = await users.findOne({email:email}) ;
+if(!result){
+res.status(402).send({message:"stop"}) ;
+}else{
+const result = await users.findOne({email:email}) ;
+res.status(201).send(result) ;
+}
+ });
 //get all user data 
 app.get("/all-users", verifyToken, verifyAdmin ,  async(req , res) => {
 const result =  await users.find({}).toArray() ;
@@ -433,6 +445,29 @@ app.get("/usersInfo", verifyToken, async (req, res) => {
     res.status(201).send({ count, data });
 });
 
+//update user by user email 
+ 
+app.put("/updateuser/:id"  , verifyToken, async (req , res) => {
+const updateData = req.body ;
+const id = req.params.id ;
+const query = {_id : ObjectId(id)} ;
+const updateDocument = {
+$set:{
+    phoneNumber : updateData?.phoneNumber ,
+    companyName : updateData?.companyName ,
+    email:  updateData?.email,
+    name: updateData?.name ,
+    profile : updateData?.profile ,
+    updatedDate: new Date().toLocaleDateString(),
+}
+}
+if(req.decodedData?.email === updateData?.checkEmail){
+const result = await users.updateOne(query , updateDocument) ;
+return res.status(201).send(result) ;
+}else{
+return res.status(403).send({message:"You can not do it !!"}) ;
+}
+}) ;
 
 //send multiple mail
 
@@ -471,7 +506,7 @@ app.post("/sendMultipleleMail", verifyToken, verifyAdmin, async (req, res) => {
     }
 
     main().catch(console.error);
-})
+});
 
 
 
@@ -483,7 +518,7 @@ app.post("/sendMultipleleMail", verifyToken, verifyAdmin, async (req, res) => {
 runMongoDB().catch(error => console.log("Error => " , error))
 app.listen(port , (req , res) => {
 console.log(`Your server running on port number:${port}`);
-})
+});
 
 //generate a token
 app.post("/jwt"  ,  async(req , res) => {
